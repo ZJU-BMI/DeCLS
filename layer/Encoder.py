@@ -23,12 +23,10 @@ class Encoder(tf.keras.Model):
         self.model_type = model_type
         if model_type == 'LSTM':
             self.LSTM_Cell_encode = tf.keras.layers.LSTMCell(hidden_size, recurrent_activation='tanh', implementation=1)
-        elif model_type == 'TimeLSTM1':
-            self.LSTM_Cell_encode = TimeLSTMCell_1(hidden_size)
+     
         elif model_type == 'TimeLSTM2':
             self.LSTM_Cell_encode = TimeLSTMCell_2(hidden_size)
-        elif model_type == 'TimeLSTM3':
-            self.LSTM_Cell_encode = TimeLSTMCell_3(hidden_size)
+       
         else:
             self.LSTM_Cell_encode = tf.keras.layers.LSTMCell(hidden_size)
 
