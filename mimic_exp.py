@@ -28,8 +28,6 @@ def train_model_mimic_all_cs(train_set, test_set, feature_dims, hidden_size, num
                     num_event, learning_rate, l2_regularization, MASK_RATE, SHUFFLE_RATE, ith_fold):
     feature = train_set.x
     visit_len = feature.shape[1]
-
-    discriminator = DISCRIMINATOR(hidden_size=64)
     encoder = Encoder(hidden_size=64, model_type='LSTM')
     fc_net = []
     for i in range(num_event):
@@ -53,7 +51,6 @@ def train_model_mimic_all_cs(train_set, test_set, feature_dims, hidden_size, num
         # 梯度下降更新
         with tf.GradientTape() as tape:
             # 做mask
-            # mask_index = int(np.random.random() * visit_len)
             mask_index = int(np.random.random() * (visit_len - 1))
 
             if MASK_RATE == 0:
@@ -71,7 +68,6 @@ def train_model_mimic_all_cs(train_set, test_set, feature_dims, hidden_size, num
                 mask_input_x_train[random_select_list_sort_index, mask_index, :] = 0
             # 生成预测的序列
             trajectory_encode_last_h, trajectory_encode_h_list = encoder(mask_input_x_train, batch=batch_size)
-            # context_state = mlp(trajectory_encode_last_h)
             predicted_trajectory_x_train, predicted_trajectory_decode_h = decoder(
                 (trajectory_encode_last_h, input_day_train_),
                 predicted_visit=visit_len,
@@ -120,15 +116,6 @@ def train_model_mimic_all_cs(train_set, test_set, feature_dims, hidden_size, num
                 neg_likelihood_loss += - tf.reduce_mean(tmp1+tmp2)
 
 
-
-
-                # clf_loss += tf.reduce_mean(
-                #     tf.nn.sigmoid_cross_entropy_with_logits(labels=I_2, logits=predicted_output_))
-                # neg_likelihood_loss += partial_log_likelihood(predicted_output_, ett, I_2)
-            # predicted_output = sap(real_trajectory_encode_h_list[:, v, :])
-
-            # survival_prediction_loss = tf.add(clf_loss, neg_likelihood_loss)
-
             if SHUFFLE_RATE == 0:
                 shuffled_input_x_train = input_x_train_
             else:
@@ -145,14 +132,9 @@ def train_model_mimic_all_cs(train_set, test_set, feature_dims, hidden_size, num
                 shuffled_input_x_train = (input_x_train_ * shuffled_input_x_train_mask0)[:, shuffle_index,
                                          :] + input_x_train_ * shuffled_input_x_train_mask1
 
-            # shuffled_input_x_train = input_x_train_[:, shuffle_index, :]
 
             shuffled_generated_decode_h, shuffled_generated_decode_h_list = encoder((shuffled_input_x_train),
                                                                                     batch=batch_size)
-
-            # contrast_loss_matrix = tf.matmul(mlp(s_h), tf.transpose(mlp(r_h)))
-            # contrast_loss_matrix = -tf.keras.losses.cosine_similarity(tf.expand_dims(mlp(s_h), 1),
-            #                                                           tf.expand_dims(mlp(r_h), 0))
 
 
             contrast_loss_matrix = tf.matmul(shuffled_generated_decode_h, tf.transpose(real_decode_h))
@@ -176,12 +158,10 @@ def train_model_mimic_all_cs(train_set, test_set, feature_dims, hidden_size, num
             contrast_loss_risk = 0
             for i in range(num_event):
                 h_e = tf.gather(real_decode_h, tf.where(label==i+1)[:,0])
-                h_0 =  tf.gather(real_decode_h, tf.where(label!=i+1)[:,0])
+                h_0 = tf.gather(real_decode_h, tf.where(label!=i+1)[:,0])
                 contrast_loss_risk_numerator = tf.matmul(h_e, tf.transpose(h_e))
                 contrast_loss_risk_denominator = tf.math.exp(tf.matmul(h_e, tf.transpose(h_0)))
                 contrast_loss_risk += -tf.reduce_sum(contrast_loss_risk_numerator-tf.math.log(tf.reduce_sum(contrast_loss_risk_denominator)))
-
-
 
             whole_loss = gen_mse_loss * 0.3 + neg_likelihood_loss * 1 + contrast_loss * 0.01 + contrast_loss2 * 0.1 + contrast_loss_risk
 
@@ -202,28 +182,7 @@ def train_model_mimic_all_cs(train_set, test_set, feature_dims, hidden_size, num
             variables =mlp_variables + encoder_variables + fc_net_variables + decoder_variables
             gradient = tape.gradient(whole_loss, variables)
             optimizer.apply_gradients(zip(gradient, variables))
-            # if train_set.epoch_completed == 1:
-            #
-            #
-            #     discriminator.load_weights('discriminator_weight.h5')
-            #     encoder.load_weights('encoder_weight.h5')
-            #     decoder.load_weights('decoder_weight.h5')
-            #     sap.load_weights('sap_weight.h5')
-            #     fc_net[0].load_weights('fc_net_0_weight.h5')
-            #     fc_net[1].load_weights('fc_net_1_weight.h5')
-            #     fc_net[2].load_weights('fc_net_2_weight.h5')
-            #     fc_net[3].load_weights('fc_net_3_weight.h5')
-            #     fc_net[4].load_weights('fc_net_4_weight.h5')
-            # if train_set.epoch_completed == epochs - 1:
-            #     discriminator.save_weights('discriminator_weight.h5')
-            #     encoder.save_weights('encoder_weight.h5')
-            #     decoder.save_weights('decoder_weight.h5')
-            #     sap.save_weights('sap_weight.h5')
-            #     fc_net[0].save_weights('fc_net_0_weight.h5')
-            #     fc_net[1].save_weights('fc_net_1_weight.h5')
-            #     fc_net[2].save_weights('fc_net_2_weight.h5')
-            #     fc_net[3].save_weights('fc_net_3_weight.h5')
-            #     fc_net[4].save_weights('fc_net_4_weight.h5')
+
             if train_set.epoch_completed % 1 == 0 and train_set.epoch_completed not in logged:
                 logged.add(train_set.epoch_completed)
                 input_x_test = test_set.x
@@ -268,11 +227,6 @@ def train_model_mimic_all_cs(train_set, test_set, feature_dims, hidden_size, num
                                            gen_mse_loss, c_index_output))
 
         tf.compat.v1.reset_default_graph()
-    # r0.to_excel('result/data/dydeephit2_event=0_ith={}.xlsx'.format(ith_fold))
-    # r1.to_excel('result/data/dydeephit2_event=1_ith={}.xlsx'.format(ith_fold))
-    # r2.to_excel('result/data/dydeephit2_event=2_ith={}.xlsx'.format(ith_fold))
-    # r3.to_excel('result/data/dydeephit2_event=3_ith={}.xlsx'.format(ith_fold))
-    # r4.to_excel('result/data/dydeephit2_event=4_ith={}.xlsx'.format(ith_fold))
     result = np.array(result)
     result_index = np.array(result_index)
     max_i = np.where(result_index == result_index.max())
@@ -292,6 +246,7 @@ def f_get_risk_predictions(pred, last_meas_, pre_time):
 
     return risk
 
+
 def f_get_risk_predictions2(o_list, pred, last_meas_, pre_time):
     _, num_Category = np.shape(pred)
     pred_s = np.zeros(np.shape(pred))
@@ -307,6 +262,8 @@ def f_get_risk_predictions2(o_list, pred, last_meas_, pre_time):
     risk = risk / (np.sum(pred_a, axis=1))
 
     return risk
+
+
 def f_get_fc_mask1(meas_time, num_Event, num_Category):
     '''
         mask3 is required to get the contional probability (to calculate the denominator part)

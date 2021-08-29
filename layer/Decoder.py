@@ -4,11 +4,11 @@ import numpy as np
 from tensorflow.keras import *
 from tensorflow import keras
 # 伪代码
+
 from layer.TimeLSTMCell_2 import *
 
 
 class Decoder(tf.keras.Model):
-
     def __init__(self, hidden_size, feature_dims, model_type):
         super(Decoder, self).__init__(name='Decoder')
         self.feature_dims = feature_dims
@@ -18,10 +18,10 @@ class Decoder(tf.keras.Model):
         self.hidden_size = hidden_size
         if model_type == 'LSTM':
             self.LSTM_decoder = tf.keras.layers.LSTMCell(hidden_size)
-   
+
         elif model_type == 'TimeLSTM2':
             self.LSTM_decoder = TimeLSTMCell_2(hidden_size)
-     
+
         else:
             self.LSTM_decoder = tf.keras.layers.LSTMCell(hidden_size)
 
@@ -86,10 +86,12 @@ class Decoder2(tf.keras.Model):
         self.hidden_size = hidden_size
         if model_type == 'LSTM':
             self.LSTM_decoder = tf.keras.layers.LSTMCell(hidden_size)
-  
+        elif model_type == 'TimeLSTM1':
+            self.LSTM_decoder = TimeLSTMCell_1(hidden_size)
         elif model_type == 'TimeLSTM2':
             self.LSTM_decoder = TimeLSTMCell_2(hidden_size)
- 
+        elif model_type == 'TimeLSTM3':
+            self.LSTM_decoder = TimeLSTMCell_3(hidden_size)
         else:
             self.LSTM_decoder = tf.keras.layers.LSTMCell(hidden_size)
 

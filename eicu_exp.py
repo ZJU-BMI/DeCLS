@@ -104,7 +104,7 @@ def train_model_all_cs(train_set, test_set, feature_dims, hidden_size, num_categ
     print('feature_size----{}'.format(feature_dims))
     print('hidden_size{}-----learning_rate{}----l2_regularization{}----'.format(hidden_size, learning_rate,
                                                                                 l2_regularization))
-    discriminator = DISCRIMINATOR(hidden_size=64)
+
     encoder = Encoder(hidden_size=128, model_type='LSTM')
     fc_net = []
     for i in range(num_event):
@@ -154,8 +154,7 @@ def train_model_all_cs(train_set, test_set, feature_dims, hidden_size, num_categ
             predicted_output = []
 
             for i in range(num_event):
-                label = input_y_train_[:, -1].reshape((-1, 1)).astype('float32')
-                ett = input_t_train_[:, -1].reshape((-1, 1)).astype('float32')
+
                 predicted_output_ = fc_net[i](real_decode_h)
                 predicted_output.append(predicted_output_)
 
@@ -184,22 +183,6 @@ def train_model_all_cs(train_set, test_set, feature_dims, hidden_size, num_categ
 
                 neg_likelihood_loss += - tf.reduce_mean(tmp1 + tmp2)
 
-
-
-            # for i in range(3):
-            #     for v in range(input_y_train_.shape[1]):
-            #
-            #         ett = input_t_train_[:, v].reshape((-1, 1)).astype('float32')
-            #         predicted_output_ = fc_net[i](real_trajectory_encode_h_list[:, v])
-            #         predicted_output_ = sap(predicted_output_)
-            #         predicted_output.append(predicted_output_)
-            #         I_2 = input_y_train_[:, v, i+1].reshape((-1, 1)).astype('float32')
-            #         clf_loss += tf.reduce_mean(
-            #             tf.nn.sigmoid_cross_entropy_with_logits(labels=I_2, logits=predicted_output_))
-            #         neg_likelihood_loss += partial_log_likelihood(predicted_output_, ett, I_2)
-                    # T_2 = ett * I_2 + np.ones_like(ett) * (1 - I_2) * 8
-            # predicted_output = sap(real_trajectory_encode_h_list[:, v, :])
-            survival_prediction_loss = tf.add(clf_loss, neg_likelihood_loss)
             if SHUFFLE_RATE == 0:
                 shuffled_input_x_train = input_x_train_
             else:
@@ -219,38 +202,19 @@ def train_model_all_cs(train_set, test_set, feature_dims, hidden_size, num_categ
             # shuffled_input_x_train = input_x_train_[:, shuffle_index, :]
             shuffled_generated_decode_h, shuffled_generated_decode_h_list = encoder((shuffled_input_x_train),
                                                                                     batch=batch_size)
-            # contrast_loss_matrix = tf.matmul(mlp(s_h), tf.transpose(mlp(r_h)))
-            # 鉴别器
-            dis_output_of_shuffled_generated_decode_h = discriminator(shuffled_generated_decode_h)
-            dis_output_of_generated_decode_h = discriminator(mask_input_x_train_trajectory_generation_decode_h)
-            dis_output_of_real_decode_h = discriminator(real_decode_h)
-            fake_loss1 = tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(logits=dis_output_of_shuffled_generated_decode_h,
-                                                        labels=tf.zeros_like(
-                                                            dis_output_of_shuffled_generated_decode_h)))
-            fake_loss2 = tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(logits=dis_output_of_generated_decode_h,
-                                                        labels=tf.zeros_like(
-                                                            dis_output_of_generated_decode_h)))
-            real_loss = tf.reduce_mean(
-                tf.nn.sigmoid_cross_entropy_with_logits(logits=dis_output_of_real_decode_h,
-                                                        labels=tf.ones_like(dis_output_of_real_decode_h)))
-            discriminator_loss = fake_loss1 + fake_loss2 + real_loss
+
+
 
             # 对比学习
-            dis_and_shuffled_generated_decode_h = tf.multiply(shuffled_generated_decode_h, dis_output_of_shuffled_generated_decode_h)
-            dis_and_real_decode_h = tf.multiply(dis_output_of_real_decode_h, real_decode_h)
-            dis_and_mask_input_x_train_trajectory_generation_decode_h = tf.multiply(dis_output_of_generated_decode_h, mask_input_x_train_trajectory_generation_decode_h)
-
-            contrast_loss_matrix = tf.matmul(dis_and_shuffled_generated_decode_h, tf.transpose(dis_and_real_decode_h))
+            contrast_loss_matrix = tf.matmul(shuffled_generated_decode_h, tf.transpose(real_decode_h))
             contrast_loss_numerator = tf.linalg.diag_part(contrast_loss_matrix)
             contrast_loss_denominator = tf.reduce_sum(tf.math.exp(contrast_loss_matrix),
                                                       axis=1)
             contrast_loss_cs = -tf.reduce_mean(contrast_loss_numerator - tf.math.log(contrast_loss_denominator))
 
             # 对比学习2
-            contrast_loss_trajectory_generation = tf.matmul(dis_and_mask_input_x_train_trajectory_generation_decode_h,
-                                                            tf.transpose(dis_and_real_decode_h))
+            contrast_loss_trajectory_generation = tf.matmul(mask_input_x_train_trajectory_generation_decode_h,
+                                                            tf.transpose(real_decode_h))
             contrast_loss_trajectory_generation_numerator = tf.linalg.diag_part(contrast_loss_trajectory_generation)
             contrast_loss_trajectory_generation_denominator = tf.reduce_sum(
                 tf.math.exp(contrast_loss_trajectory_generation),
@@ -258,7 +222,19 @@ def train_model_all_cs(train_set, test_set, feature_dims, hidden_size, num_categ
             contrast_loss_cg = -tf.reduce_mean(
                 contrast_loss_trajectory_generation_numerator - tf.math.log(
                     contrast_loss_trajectory_generation_denominator))
-            whole_loss = gen_mse_loss * 0.1 + clf_loss * 1 + neg_likelihood_loss * 1 + contrast_loss_cs * 0.01 + contrast_loss_cg * 0.01 + discriminator_loss*0.1
+
+            # 对比学习3
+            contrast_loss_risk = 0
+            for i in range(num_event):
+                label = input_y_train_[:, -1, i].reshape((-1, 1)).astype('float32')
+                h_e = tf.gather(real_decode_h, tf.where(label == 1)[:, 0])
+                h_0 = tf.gather(real_decode_h, tf.where(label != 1)[:, 0])
+                contrast_loss_risk_numerator = tf.matmul(h_e, tf.transpose(h_e))
+                contrast_loss_risk_denominator = tf.math.exp(tf.matmul(h_e, tf.transpose(h_0)))
+                contrast_loss_risk += -tf.reduce_sum(
+                    contrast_loss_risk_numerator - tf.math.log(tf.reduce_sum(contrast_loss_risk_denominator)))
+
+            whole_loss = gen_mse_loss * 0.1 + clf_loss * 1 + neg_likelihood_loss * 1 + contrast_loss_cs * 0.01 + contrast_loss_cg * 0.01 + contrast_loss_risk*0.1
             fc_net_variables = []
             for i in range(3):
                 fc_net_variables.extend([var for var in fc_net[i].trainable_variables])
@@ -272,24 +248,11 @@ def train_model_all_cs(train_set, test_set, feature_dims, hidden_size, num_categ
             sap_variables = [var for var in mlp.trainable_variables]
             for weight in mlp.trainable_variables:
                 whole_loss += tf.keras.regularizers.l2(l2_regularization)(weight)
-            discriminator_variables = [var for var in discriminator.trainable_variables]
-            for weight in discriminator.trainable_variables:
-                whole_loss += tf.keras.regularizers.l2(l2_regularization)(weight)
-            variables = sap_variables + encoder_variables + fc_net_variables + decoder_variables + discriminator_variables
+
+            variables = sap_variables + encoder_variables + fc_net_variables + decoder_variables
             gradient = tape.gradient(whole_loss, variables)
             optimizer.apply_gradients(zip(gradient, variables))
-            # if train_set.epoch_completed == 1:
-            #     s2s.load_weights('S2S_weight_{}_v1.h5'.format(target_label))
-            # if train_set.epoch_completed == epochs - 1:
-            #     discriminator.save_weights('discriminator_weight.h5')
-            #     encoder.save_weights('encoder_weight.h5')
-            #     decoder.save_weights('decoder_weight.h5')
-            #     sap.save_weights('sap_weight.h5')
-            #     fc_net[0].save_weights('fc_net_0_weight.h5')
-            #     fc_net[1].save_weights('fc_net_1_weight.h5')
-            #     fc_net[2].save_weights('fc_net_2_weight.h5')
-            #     fc_net[3].save_weights('fc_net_3_weight.h5')
-            #     fc_net[4].save_weights('fc_net_4_weight.h5')
+
             if train_set.epoch_completed % 1 == 0 and train_set.epoch_completed not in logged:
 
                 logged.add(train_set.epoch_completed)
@@ -321,7 +284,7 @@ def train_model_all_cs(train_set, test_set, feature_dims, hidden_size, num_categ
                     predicted_output.append(predicted_risk_test)
                     I_2 = input_y_test[:, -1, i].reshape((-1, )).astype('float32')
                     # T_2 = ett_test * I_2 + np.ones_like(ett_test) * (1 - I_2) * 8
-                    print(np.shape(ett_test),np.shape(predicted_risk_test),np.shape(I_2))
+                    #print(np.shape(ett_test),np.shape(predicted_risk_test),np.shape(I_2))
                     c_index = concordance_index(ett_test[:,0], -predicted_risk_test, I_2)
                     c_index_output.append(c_index)
 
@@ -353,7 +316,7 @@ def data_spilt(features, labels, event_num):
 
 
 def data_divided(data, visit_len, feature_dims):
-    labels = data[:, 43:46].astype('float32').reshape(-1, visit_len, 3)
+    labels = data[:, 42:47].astype('float32').reshape(-1, visit_len, 5)
     features = data[:, 0:39].astype('float32').reshape(-1, visit_len, 39)
     days = data[:, 40].astype('float32').reshape(-1, visit_len, 1)
     ett = data[:, 41].astype('float32').reshape(-1, visit_len, 1)
@@ -517,11 +480,5 @@ def experiment(MASK_RATE,SHUFFLE_RATE):
 
 
 
-
-
 if __name__ == '__main__':
-
-
     experiment(1,1)
-    # for MASK_RATE in [0.,0.2,0.4]:
-    #     experiment(MASK_RATE,1)

@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from tensorflow.keras import *
 from tensorflow import keras
+
 from layer.TimeLSTMCell_2 import *
 
 
@@ -22,10 +23,10 @@ class Encoder(tf.keras.Model):
         self.model_type = model_type
         if model_type == 'LSTM':
             self.LSTM_Cell_encode = tf.keras.layers.LSTMCell(hidden_size, recurrent_activation='tanh', implementation=1)
-     
+
         elif model_type == 'TimeLSTM2':
             self.LSTM_Cell_encode = TimeLSTMCell_2(hidden_size)
-       
+
         else:
             self.LSTM_Cell_encode = tf.keras.layers.LSTMCell(hidden_size)
 
